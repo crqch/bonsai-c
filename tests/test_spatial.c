@@ -11,8 +11,6 @@
 #define TEST_PERM_SZ    MB(32)
 #define TEST_SCRATCH_SZ MB(4)
 
-#define PI_F 3.14159265f
-
 static arena_t s_perm_arena;
 static arena_t s_scratch_arena;
 
@@ -188,26 +186,44 @@ int main(void) {
         TEST_ASSERT(s_scratch_arena.off == off_after_build, "scratch offset exp rewound to %zu, got %zu", off_after_build, s_scratch_arena.off);
     } TEST_CASE_END();
 
+    TEST_CASE("spatial_hash_alias", "filters hash collisions across negative cells") {
+        arena_reset(&s_scratch_arena);
+        spatial_grid2d_t grid;
+        TEST_ASSERT(spatial_grid2d_init(&grid, 8.0f, 1) == OK, "one bucket forces all cells to collide");
+        spatial_entity2d_t ents[] = {
+            { .ent = 1, .bounds = aabb2f(vec2f(-20, -20), vec2f(-1, -1)), .mask = 1 },
+            { .ent = 2, .bounds = aabb2f(vec2f(20, 20), vec2f(30, 30)), .mask = 1 },
+        };
+        TEST_ASSERT(spatial_grid2d_build(&grid, ents, ARR_CNT(ents), &s_scratch_arena) == OK, "grid built");
+        entity_handle_t out[2] = { ENTITY_NULL, ENTITY_NULL };
+        aabb2f query = aabb2f(vec2f(-24, -24), vec2f(0, 0));
+        uint32_t cnt = spatial_query_aabb2d(&grid, query, 0, out, 1, &s_scratch_arena);
+        TEST_ASSERT(cnt == 1 && out[0] == 1, "negative multi-cell entity returned once");
+        TEST_ASSERT(out[1] == ENTITY_NULL, "output capacity respected");
+        cnt = spatial_query_point2d(&grid, vec2f(0, 0), 0, out, 2);
+        TEST_ASSERT(cnt == 0, "hash collisions cannot produce point false positives");
+    } TEST_CASE_END();
+
     TEST_CASE("spatial_ecs2d", "builds 2D grid from ECS transforms and colliders") {
         reset_world();
         spatial_grid2d_t g;
         spatial_grid2d_init(&g, 64.0f, 256);
 
         entity_handle_t e1 = ecs_spawn();
-        trans2d    t1 = { .x      = 100.0f, .y      = 100.0f, .scale = 1.0f };
-        collider2d c1 = { .half_x = 10.0f,  .half_y = 10.0f,  .mask  = 0x01 };
+        trans2d    t1 = trans2d(vec2f(100.0f, 100.0f), 0.0f, 1.0f);
+        collider2d c1 = collider2d(vec2f(10.0f, 10.0f), vec2f_splat(0.0f), 0x01, false, COLLIDER_BOX);
         ecs_add(e1, trans2d,    &t1);
         ecs_add(e1, collider2d, &c1);
 
         entity_handle_t e2 = ecs_spawn();
-        trans2d    t2 = { .x      = 200.0f, .y      = 200.0f, .rot  = PI_F * 0.5f, .scale = 1.0f };
-        collider2d c2 = { .half_x = 20.0f,  .half_y = 10.0f,  .mask = 0x02                       };
+        trans2d    t2 = trans2d(vec2f(200.0f, 200.0f), GMATH_HALFPI, 1.0f);
+        collider2d c2 = collider2d(vec2f(20.0f, 10.0f), vec2f_splat(0.0f), 0x02, false, COLLIDER_BOX);
         ecs_add(e2, trans2d,    &t2);
         ecs_add(e2, collider2d, &c2);
 
         entity_handle_t e3 = ecs_spawn();
-        trans2d    t3 = { .x      = 300.0f, .y      = 300.0f, .scale = -1.0f };
-        collider2d c3 = { .half_x = 15.0f,  .half_y = 15.0f,  .mask  = 0x01  };
+        trans2d    t3 = trans2d(vec2f(300.0f, 300.0f), 0.0f, -1.0f);
+        collider2d c3 = collider2d(vec2f(15.0f, 15.0f), vec2f_splat(0.0f), 0x01, false, COLLIDER_BOX);
         ecs_add(e3, trans2d,    &t3);
         ecs_add(e3, collider2d, &c3);
 
@@ -344,19 +360,15 @@ int main(void) {
         spatial_grid3d_init(&g, 64.0f, 256);
 
         entity_handle_t e1 = ecs_spawn();
-        trans3d    t1 = { .x      = 10.0f, .y      = 20.0f, .z      = 30.0f, .qw   = 1.0f, .scale_x = 1.0f, .scale_y = 1.0f, .scale_z = 1.0f };
-        collider3d c1 = { .half_x = 5.0f,  .half_y = 5.0f,  .half_z = 5.0f,  .mask = 0x01 };
+        trans3d    t1 = trans3d(vec3f(10.0f, 20.0f, 30.0f), quatf(0.0f, 0.0f, 0.0f, 1.0f), vec3f_splat(1.0f));
+        collider3d c1 = collider3d(vec3f(5.0f, 5.0f, 5.0f), vec3f_splat(0.0f), 0x01, false, COLLIDER_BOX);
         ecs_add(e1, trans3d,    &t1);
         ecs_add(e1, collider3d, &c1);
 
-        float half_ang = PI_F * 0.25f;
+        float half_ang = GMATH_HALFPI * 0.5f;
         entity_handle_t e2 = ecs_spawn();
-        trans3d t2 = {
-            .x       = 100.0f, .y       = 100.0f, .z       = 100.0f,
-            .qx      = 0.0f,   .qy      = 0.0f,   .qz      = sinf(half_ang), .qw = cosf(half_ang),
-            .scale_x = 1.0f,   .scale_y = 1.0f,   .scale_z = 1.0f
-        };
-        collider3d c2 = { .half_x = 20.0f, .half_y = 10.0f, .half_z = 5.0f, .mask = 0x02 };
+        trans3d t2 = trans3d(vec3f(100.0f, 100.0f, 100.0f), quatf(0.0f, 0.0f, sinf(half_ang), cosf(half_ang)), vec3f_splat(1.0f));
+        collider3d c2 = collider3d(vec3f(20.0f, 10.0f, 5.0f), vec3f_splat(0.0f), 0x02, false, COLLIDER_BOX);
         ecs_add(e2, trans3d,    &t2);
         ecs_add(e2, collider3d, &c2);
 

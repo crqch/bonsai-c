@@ -37,11 +37,16 @@ Semantic version string of the engine in `MAJOR.MINOR.PATCH` format.
 /* >CORE SUBSYSTEMS                                                                               */
 /* ============================================================================================== */
 
-#include "core.h"
 #include "arena.h"
-#include "gmath.h"
-#include "reflect.h"
+#include "assets.h"
+#include "capture.h"
+#include "core.h"
 #include "ecs.h"
+#include "gmath.h"
+#include "mesh.h"
+#include "physics.h"
+#include "reflect.h"
+#include "render.h"
 #include "spatial.h"
 
 #ifdef __cplusplus
